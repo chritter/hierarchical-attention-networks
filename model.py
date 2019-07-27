@@ -6,6 +6,16 @@ from utils import get_shape, batch_doc_normalize
 
 class Model:
   def __init__(self, cell_dim, att_dim, vocab_size, emb_size, num_classes, dropout_rate, pretrained_embs):
+    '''
+    Define parameters incl. tensors, and
+    :param cell_dim:
+    :param att_dim:
+    :param vocab_size:
+    :param emb_size:
+    :param num_classes:
+    :param dropout_rate:
+    :param pretrained_embs:
+    '''
     self.cell_dim = cell_dim
     self.att_dim = att_dim
     self.emb_size = emb_size
@@ -28,6 +38,10 @@ class Model:
     self._init_classifier()
 
   def _init_embedding(self):
+    '''
+
+    :return:
+    '''
     with tf.variable_scope('embedding'):
       self.embedding_matrix = tf.get_variable(name='embedding_matrix',
                                               shape=[self.vocab_size, self.emb_size],

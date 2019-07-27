@@ -36,13 +36,13 @@ class DataReader:
         doc = doc[:self.max_sent_length]
         # limits number of words per sentence
         doc = [sent[:self.max_word_length] for sent in doc]
-
+        # set label as label-1 due to start of label as 1?
         label -= 1
         assert label >= 0 and label < self.num_classes
 
         new_data.append((doc, label))
 
-    # sort data by sent lengths to speed up
+    # sort data by sent lengths to speed up; mentioned in paper
     new_data = sorted(new_data, key=lambda x: len(x[0]))
     return new_data
 

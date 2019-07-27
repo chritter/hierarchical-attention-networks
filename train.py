@@ -131,13 +131,15 @@ def main(_):
   # create embedding matrix of size (vocab,emb_size)
   glove_embs = load_glove('../WordEmbeddings/Data/glove.6B/glove.6B.{}d.txt'.format(FLAGS.emb_size), FLAGS.emb_size, vocab)
 
-
+   # read data as (doc,label) pairs
   data_reader = DataReader(train_file='data/preprocessed/yelp-2015-train.pkl',
                            dev_file='data/preprocessed/yelp-2015-dev.pkl',
                            test_file='data/preprocessed/yelp-2015-test.pkl')
 
   config = tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement)
+
   with tf.Session(config=config) as sess:
+
     model = Model(cell_dim=FLAGS.cell_dim,
                   att_dim=FLAGS.att_dim,
                   vocab_size=len(vocab),
