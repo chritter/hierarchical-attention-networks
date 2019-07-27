@@ -91,24 +91,32 @@ class Model:
                                          initial_state_fw=init_state_fw,
                                          initial_state_bw=init_state_bw,
                                          scope=scope)
-      # rnn_outputs.shape = [number sentences, number words, self.cell_dim]
+      # rnn_outputs.shape = [number sentences, number words, 2*self.cell_dim]
 
       # word_outputs sentence vectors, word_att_weights alpha
+      # output dim for word_outputs (num sentences,1,2* hidden state cell dim); sentence vectors as in paper
       word_outputs, word_att_weights = attention(inputs=rnn_outputs,
                                                  att_dim=self.att_dim,
                                                  sequence_lengths=word_lengths)
 
-      # apply dropout
+      # apply dropout, only activate during training
       self.word_outputs = tf.layers.dropout(word_outputs, self.dropout_rate, training=self.is_training)
 
   def _init_sent_encoder(self):
+    '''
+    Build Sentence Encoder part as in the paper
+    :return:
+    '''
     with tf.variable_scope('sent-encoder') as scope:
+
+      # input shape: (number docs, max sentence per document, 2*cell_dim)
       sent_inputs = tf.reshape(self.word_outputs, [-1, self.max_sent_length, 2 * self.cell_dim])
 
       # sentence encoder
       cell_fw = rnn.GRUCell(self.cell_dim, name='cell_fw')
       cell_bw = rnn.GRUCell(self.cell_dim, name='cell_bw')
 
+      # for each document get the hidden state array
       init_state_fw = tf.tile(tf.get_variable('init_state_fw',
                                               shape=[1, self.cell_dim],
                                               initializer=tf.constant_initializer(0)),
@@ -125,13 +133,22 @@ class Model:
                                          initial_state_fw=init_state_fw,
                                          initial_state_bw=init_state_bw,
                                          scope=scope)
+      # rnn_outputs.shape = [num docs, number sentences, 2*self.cell_dim]
 
+      # Returns document vectors
+      # output dim for word_outputs (num docs,1,2* hidden state cell dim); sentence vectors as in paper
       sent_outputs, sent_att_weights = attention(inputs=rnn_outputs,
                                                  att_dim=self.att_dim,
                                                  sequence_lengths=self.sent_lengths)
+
+      #dropout
       self.sent_outputs = tf.layers.dropout(sent_outputs, self.dropout_rate, training=self.is_training)
 
   def _init_classifier(self):
+    '''
+    Document Classifier (paper 2.3)
+    :return:
+    '''
     with tf.variable_scope('classifier'):
       self.logits = tf.layers.dense(inputs=self.sent_outputs, units=self.num_classes, name='logits')
 

@@ -76,24 +76,51 @@ def read_data(data_file):
 
 if __name__ == '__main__':
 
-  # get text and labels
-  train_data = read_data('data/emnlp-2015-data/yelp-2015-train.txt.ss')
+  dataset='imdb'
 
-  train_data = train_data[:100]
+  if dataset == 'yelp15':
+    # get text and labels
+    train_data = read_data('data/emnlp-2015-data/yelp-2015-train.txt.ss')
 
-  word_to_index = build_vocab(train_data[6], 'data/preprocessed/yelp-2015')
+    train_data = train_data[:1000]
+
+    word_to_index = build_vocab(train_data[6], 'data/preprocessed_all/yelp-2015')
 
 
-  process_and_save(word_to_index, train_data, 'data/yelp-2015-train.pkl')
+    process_and_save(word_to_index, train_data, 'data/preprocessed_all/yelp-2015-train.pkl')
 
-  dev_data = read_data('data/emnlp-2015-data/yelp-2015-dev.txt.ss')
+    dev_data = read_data('data/emnlp-2015-data/yelp-2015-dev.txt.ss')
 
-  dev_data = dev_data[:100]
+    dev_data = dev_data[:1000]
 
-  process_and_save(word_to_index, dev_data, 'data/preprocessed/yelp-2015-dev.pkl')
+    process_and_save(word_to_index, dev_data, 'data/preprocessed_all/yelp-2015-dev.pkl')
 
-  test_data = read_data('data/emnlp-2015-data/yelp-2015-test.txt.ss')
+    test_data = read_data('data/emnlp-2015-data/yelp-2015-test.txt.ss')
 
-  test_data = test_data[:100]
+    test_data = test_data[:1000]
 
-  process_and_save(word_to_index, test_data, 'data/preprocessed/yelp-2015-test.pkl')
+    process_and_save(word_to_index, test_data, 'data/preprocessed_all/yelp-2015-test.pkl')
+
+  if dataset == 'imdb':
+    # get text and labels
+    train_data = read_data('data/emnlp-2015-data/imdb-train.txt.ss')
+    print('train data shape: ',train_data.shape)
+    print(train_data.columns)
+
+    #train_data = train_data[:1000]
+
+    word_to_index = build_vocab(train_data[6], 'data/pre_pro_imdb/yelp-2015')
+
+    process_and_save(word_to_index, train_data, 'data/pre_pro_imdb/imdb-train.pkl')
+
+    dev_data = read_data('data/emnlp-2015-data/imdb-dev.txt.ss')
+
+    #dev_data = dev_data[:1000]
+
+    process_and_save(word_to_index, dev_data, 'data/pre_pro_imdb/imdb-dev.pkl')
+
+    test_data = read_data('data/emnlp-2015-data/imdb-test.txt.ss')
+
+    #test_data = test_data[:1000]
+
+    process_and_save(word_to_index, test_data, 'data/pre_pro_imdb/imdb-test.pkl')

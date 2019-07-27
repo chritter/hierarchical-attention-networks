@@ -13,10 +13,12 @@ def bidirectional_rnn(cell_fw, cell_bw, inputs, input_lengths,
                       initial_state_fw=None, initial_state_bw=None,
                       scope=None):
   '''
-  Creates a dynamic version of bidirectional RNN. Here inputs are batches of sentences.
+  Creates a dynamic version of bidirectional RNN. Here inputs are batches of sentences or batches of documents
+  Function is called for both, in encoding of words and encoding of sentences
+  For words (A)) 3rd dim is embedding, for sentence 3rd dim is 2*cell_dim from last GRU cell.
   :param cell_fw:
   :param cell_bw:
-  :param inputs: dim (number_sentences, word sequence, embedding), number_sentenes = batch size (not equal to model input batchsize!)
+  :param inputs: dim (number_sentences, word sequence, embedding/2*cell_dim), number_sentenes = batch size (not equal to model input batchsize!)
   :param input_lengths: sequence length of each sentence
   :param initial_state_fw:
   :param initial_state_bw:
@@ -28,7 +30,7 @@ def bidirectional_rnn(cell_fw, cell_bw, inputs, input_lengths,
     # initial_state_fw: (optional) An initial state for the forward RNN.
     #     This must be a tensor of appropriate type and shape
     #     `[batch_size, cell_fw.state_size]`.
-    # inputs: this must be a tensor of shape: `[batch_size, word sequence, ...]`,
+    # inputs: this must be a tensor of shape: `[batch_size, word sequence/sentence sequence, ...]`,
     # input_lengths: containing the actual lengths for each of the sequences in the batch.
     # fw_outputs: [batch_size, max_time, cell_fw.output_size/self.cell_dim]
     # *_state: containing the forward and the backward final states of bidirectional rnn. this is not what we want
@@ -42,7 +44,7 @@ def bidirectional_rnn(cell_fw, cell_bw, inputs, input_lengths,
       dtype=tf.float32,
       scope=scope
     )
-    # concatunating fw and bw outputs
+    # concatunating fw and bw outputs: create dimension with 2*cell_dim!
     outputs = tf.concat((fw_outputs, bw_outputs), axis=2)
 
     # concatunating of states happends differently, depending on type
@@ -96,7 +98,7 @@ def masking(scores, sequence_lengths, score_mask_value=tf.constant(-np.inf)):
 def attention(inputs, att_dim, sequence_lengths, scope=None):
   '''
 
-  :param inputs: input of dim [number sentences, number words, hidden state cell_dim]
+  :param inputs: input of dim [number sentences/number of docs, number words/of sentences, 2*cell_dim]
   :param att_dim:
   :param sequence_lengths:
   :param scope:
@@ -109,16 +111,17 @@ def attention(inputs, att_dim, sequence_lengths, scope=None):
   with tf.variable_scope(scope or 'attention'):
 
     # word-level context vector word_att_W, word context vector is random uniform initialized as in paper
+    # this is also sentence-level attention vector when called for sentences
     word_att_W = tf.get_variable(name='att_W', shape=[att_dim, 1])
 
     # 1 layer MLP as described in the paper, incl. tanh (eq5), att_dim = units
-    # returns (num sent, num words, attention dim) or (collapsed dim, attendion_dim)
+    # returns (num sent/num docs, num words/sentences, attention dim) or (collapsed dim, attendion_dim)
     projection = tf.layers.dense(inputs, att_dim, tf.nn.tanh, name='projection')
 
-    # u_it (words, att dim) * word_att_W (att_dim,1) leads to alpha shape (words)
+    # u_it (words/sentences, att dim) * word_att_W (att_dim,1) leads to alpha shape (words)
     alpha = tf.matmul(tf.reshape(projection, shape=[-1, att_dim]), word_att_W)
 
-    # reshape to (num sentences?, num_words)
+    # reshape to (num sentences?/num docs, num_words/num_sentences)
     alpha = tf.reshape(alpha, shape=[-1, get_shape(inputs)[1]])
 
     # mask each sentence with -1e15 if longer than what is given in sequence_lengths
@@ -127,9 +130,11 @@ def attention(inputs, att_dim, sequence_lengths, scope=None):
     # apply softmax to calculate alphas as defined in paper
     alpha = tf.nn.softmax(alpha)
 
-    # calculate s_i for each sentence: sum across number of words, for each sentence,
+    # A) calculate s_i for each sentence/each doc: sum across number of words, for each sentence,
     # add expand dims due to hidden state cell dim in inputs
-    # outputs dim (num sentences,1,hidden state cell dim)
+    # outputs dim (num sentences,1,2*cell dim)
+    # B) calculate document vector v for each doc;
+    # output dim (num docs, 1,2*cell dim)
     outputs = tf.reduce_sum(inputs * tf.expand_dims(alpha, 2), axis=1)
 
     return outputs, alpha
