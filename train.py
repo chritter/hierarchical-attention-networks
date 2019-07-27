@@ -148,13 +148,22 @@ def main(_):
                   dropout_rate=FLAGS.dropout_rate,
                   pretrained_embs=glove_embs)
 
+    # calculate loss
     loss = loss_fn(model.labels, model.logits)
+
+    # calculates gradients
     train_op, global_step = train_fn(loss)
+
+    # calculates metrics and merges all
     batch_acc, total_acc, acc_update, metrics_init = eval_fn(model.labels, model.logits)
     summary_op = tf.summary.merge_all()
+
     sess.run(tf.global_variables_initializer())
 
+    # The graph described by sess.graph will be displayed by TensorBoard
     train_writer.add_graph(sess.graph)
+
+    # save all variables
     saver = tf.train.Saver(max_to_keep=FLAGS.num_checkpoints)
 
     print('\n{}> Start training'.format(datetime.now()))
@@ -163,6 +172,7 @@ def main(_):
     valid_step = 0
     test_step = 0
     train_test_prop = len(data_reader.train_data) / len(data_reader.test_data)
+
     test_batch_size = int(FLAGS.batch_size / train_test_prop)
     best_acc = float('-inf')
 
@@ -170,8 +180,13 @@ def main(_):
       epoch += 1
       print('\n{}> Epoch: {}'.format(datetime.now(), epoch))
 
+      # we newly initialize metrics tensors each epoch
       sess.run(metrics_init)
+
+      # each data point/doc in batch contains a list of sentences, encoded with index
       for batch_docs, batch_labels in data_reader.read_train_set(FLAGS.batch_size, shuffle=True):
+
+        #
         _step, _, _loss, _acc, _ = sess.run([global_step, train_op, loss, batch_acc, acc_update],
                                          feed_dict=model.get_feed_dict(batch_docs, batch_labels, training=True))
         if _step % FLAGS.display_step == 0:

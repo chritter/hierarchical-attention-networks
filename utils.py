@@ -4,6 +4,11 @@ import pickle
 
 
 def get_shape(tensor):
+  '''
+  Returns the shape of a given tensor
+  :param tensor:
+  :return:
+  '''
   static_shape = tensor.shape.as_list()
   dynamic_shape = tf.unstack(tf.shape(tensor))
   dims = [s[1] if s[0] is None else s[0]
@@ -35,13 +40,30 @@ def read_vocab(vocab_file):
 
 
 def batch_doc_normalize(docs):
+  '''
+
+  :param docs:
+  :return:
+  '''
+  # get number of sentences per doc
   sent_lengths = np.array([len(doc) for doc in docs], dtype=np.int32)
+
+  # identify overall max number of sentences
   max_sent_length = sent_lengths.max()
+
+  # get number of words per sentence per doc
   word_lengths = [[len(sent) for sent in doc] for doc in docs]
+
+  # identify overall max length of words
   max_word_length = max(map(max, word_lengths))
 
+  # array to hold batch, can vary between batches!
   padded_docs = np.zeros(shape=[len(docs), max_sent_length, max_word_length], dtype=np.int32)  # PADDING 0
+
+  # holds sentences per document
   word_lengths = np.zeros(shape=[len(docs), max_sent_length], dtype=np.int32)
+
+  # iterate through all docs, through all sentences and fill batch arrays
   for i, doc in enumerate(docs):
     for j, sent in enumerate(doc):
       word_lengths[i, j] = len(sent)

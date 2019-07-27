@@ -32,14 +32,17 @@ class Model:
     self.labels = tf.placeholder(shape=(None), dtype=tf.int32, name='labels')
     self.is_training = tf.placeholder(dtype=tf.bool, name='is_training')
 
+    # load embedding matrix into graph, prepares embedding lookup as embedding_inputs
     self._init_embedding()
+
     self._init_word_encoder()
     self._init_sent_encoder()
     self._init_classifier()
 
   def _init_embedding(self):
     '''
-
+    Initialize embeddings through pre-trained embeddings, load them into the graph, get embeddings
+    for all docs through embedding_lookup. This is unusual as typically lookups happen for each batch
     :return:
     '''
     with tf.variable_scope('embedding'):
@@ -50,23 +53,34 @@ class Model:
       self.embedded_inputs = tf.nn.embedding_lookup(self.embedding_matrix, self.docs)
 
   def _init_word_encoder(self):
+    '''
+    Build Word Encoder part as in the paper
+    :return:
+    '''
     with tf.variable_scope('word-encoder') as scope:
+
+      # holding the input batch:
       word_inputs = tf.reshape(self.embedded_inputs, [-1, self.max_word_length, self.emb_size])
+
+      # containing the actual lengths for each of the sequences in the batch
       word_lengths = tf.reshape(self.word_lengths, [-1])
 
-      # word encoder
+      # define forward and backword GRU cells
       cell_fw = rnn.GRUCell(self.cell_dim, name='cell_fw')
       cell_bw = rnn.GRUCell(self.cell_dim, name='cell_bw')
 
+      # initialize state of forward GRU cell as 0's, for each data point in batch
       init_state_fw = tf.tile(tf.get_variable('init_state_fw',
                                               shape=[1, self.cell_dim],
                                               initializer=tf.constant_initializer(0)),
                               multiples=[get_shape(word_inputs)[0], 1])
+      # same but for backward GRU cell
       init_state_bw = tf.tile(tf.get_variable('init_state_bw',
                                               shape=[1, self.cell_dim],
                                               initializer=tf.constant_initializer(0)),
                               multiples=[get_shape(word_inputs)[0], 1])
 
+      # bidirectional_rnn returns outputs, state; why do we keep the output and not hidden state???
       rnn_outputs, _ = bidirectional_rnn(cell_fw=cell_fw,
                                          cell_bw=cell_bw,
                                          inputs=word_inputs,
@@ -74,10 +88,14 @@ class Model:
                                          initial_state_fw=init_state_fw,
                                          initial_state_bw=init_state_bw,
                                          scope=scope)
+      # rnn_outputs.shape = [batch_size, max_time, self.cell_dim]
 
+      # word_outputs sentence vectors, word_att_weights alpha
       word_outputs, word_att_weights = attention(inputs=rnn_outputs,
                                                  att_dim=self.att_dim,
                                                  sequence_lengths=word_lengths)
+
+      # apply dropout
       self.word_outputs = tf.layers.dropout(word_outputs, self.dropout_rate, training=self.is_training)
 
   def _init_sent_encoder(self):
@@ -115,7 +133,19 @@ class Model:
       self.logits = tf.layers.dense(inputs=self.sent_outputs, units=self.num_classes, name='logits')
 
   def get_feed_dict(self, docs, labels, training=False):
+    '''
+    pre-processor for sesson.run(feed_dict) which takes the raw list of docs and labels and
+
+    :param docs:
+    :param labels:
+    :param training:
+    :return:
+    '''
+
+    # padded docs: (len(docs), max_sent_length, max_word_length)
+    # sent_length, word_lengths arrays containing number of sentence/number of words per doc/per sentence
     padded_docs, sent_lengths, max_sent_length, word_lengths, max_word_length = batch_doc_normalize(docs)
+
     fd = {
       self.docs: padded_docs,
       self.sent_lengths: sent_lengths,

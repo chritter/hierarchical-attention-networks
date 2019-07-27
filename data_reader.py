@@ -48,6 +48,9 @@ class DataReader:
 
   def _batch_iterator(self, data, batch_size, desc=None):
     num_batches = int(np.ceil(len(data) / batch_size))
+
+    # tqdm: Iterable to decorate with a progressbar.
+    # over all batches
     for b in tqdm(range(num_batches), desc):
       begin_offset = batch_size * b
       end_offset = batch_size * b + batch_size
@@ -56,6 +59,8 @@ class DataReader:
 
       doc_batch = []
       label_batch = []
+
+      # each batch data point is a doc!
       for offset in range(begin_offset, end_offset):
         doc_batch.append(data[offset][0])
         label_batch.append(data[offset][1])
