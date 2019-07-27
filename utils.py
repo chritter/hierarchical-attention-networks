@@ -63,6 +63,7 @@ def load_glove(glove_file, emb_size, vocab):
   f.close()
   print('Total {} word vectors in {}'.format(len(embedding_weights), glove_file))
 
+  # initialize embedding matrix based on size of corpus vocabulary, normalize by size of embedding, why?
   embedding_matrix = np.random.uniform(-0.5, 0.5, (len(vocab), emb_size)) / emb_size
 
   oov_count = 0
@@ -72,6 +73,6 @@ def load_glove(glove_file, emb_size, vocab):
       embedding_matrix[i] = embedding_vector
     else:
       oov_count += 1
-  print('Number of OOV words = %d' % oov_count)
+  print('Number of OOV (out of vocabulary, in corpus but not available as embedding) words = %d' % oov_count)
 
   return embedding_matrix

@@ -8,8 +8,15 @@ WORD_CUT_OFF = 5
 
 
 def build_vocab(docs, save_path):
+  '''
+  Create index to vocab (and inverse) dicts and pickle to disk.
+  :param docs:
+  :param save_path:
+  :return: word to index lookup
+  '''
   print('Building vocab ...')
 
+  # tokenize corpus
   sents = itertools.chain(*[text.split('<sssss>') for text in docs])
   tokenized_sents = [sent.split() for sent in sents]
 
@@ -17,7 +24,7 @@ def build_vocab(docs, save_path):
   word_freq = nltk.FreqDist(itertools.chain(*tokenized_sents))
   print("%d unique words found" % len(word_freq.items()))
 
-  # Cut-off
+  # Cut-off words with less frequency then WORD_CUT_OFF; not mentioned in paper!
   retained_words = [w for (w, f) in word_freq.items() if f > WORD_CUT_OFF]
   print("%d words retained" % len(retained_words))
 
@@ -40,6 +47,13 @@ def build_vocab(docs, save_path):
 
 
 def process_and_save(word_to_index, data, out_file):
+  '''
+  Create index-encoded documents, attach label and dump to disk
+  :param word_to_index:
+  :param data:
+  :param out_file:
+  :return: None
+  '''
   mapped_data = []
   for label, doc in zip(data[4], data[6]):
     mapped_doc = [[word_to_index.get(word, 1) for word in sent.split()] for sent in doc.split('<sssss>')]
@@ -50,18 +64,36 @@ def process_and_save(word_to_index, data, out_file):
 
 
 def read_data(data_file):
+  '''
+  Read data from file, only cols 4,6
+  :param data_file:
+  :return: data
+  '''
   data = pd.read_csv(data_file, sep='\t', header=None, usecols=[4, 6])
   print('{}, shape={}'.format(data_file, data.shape))
   return data
 
 
 if __name__ == '__main__':
-  train_data = read_data('data/yelp-2015-train.txt.ss')
-  word_to_index = build_vocab(train_data[6], 'data/yelp-2015')
+
+  # get text and labels
+  train_data = read_data('data/emnlp-2015-data/yelp-2015-train.txt.ss')
+
+  train_data = train_data[:100]
+
+  word_to_index = build_vocab(train_data[6], 'data/preprocessed/yelp-2015')
+
+
   process_and_save(word_to_index, train_data, 'data/yelp-2015-train.pkl')
 
-  dev_data = read_data('data/yelp-2015-dev.txt.ss')
-  process_and_save(word_to_index, dev_data, 'data/yelp-2015-dev.pkl')
+  dev_data = read_data('data/emnlp-2015-data/yelp-2015-dev.txt.ss')
 
-  test_data = read_data('data/yelp-2015-test.txt.ss')
-  process_and_save(word_to_index, test_data, 'data/yelp-2015-test.pkl')
+  dev_data = dev_data[:100]
+
+  process_and_save(word_to_index, dev_data, 'data/preprocessed/yelp-2015-dev.pkl')
+
+  test_data = read_data('data/emnlp-2015-data/yelp-2015-test.txt.ss')
+
+  test_data = test_data[:100]
+
+  process_and_save(word_to_index, test_data, 'data/preprocessed/yelp-2015-test.pkl')

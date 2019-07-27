@@ -4,13 +4,14 @@ from data_reader import DataReader
 from model import Model
 from utils import read_vocab, count_parameters, load_glove
 
+
 # Parameters
 # ==================================================
 FLAGS = tf.flags.FLAGS
 
-tf.flags.DEFINE_string("checkpoint_dir", 'checkpoints',
+tf.flags.DEFINE_string("checkpoint_dir", 'saved_models/run1/checkpoints',
                        """Path to checkpoint folder""")
-tf.flags.DEFINE_string("log_dir", 'logs',
+tf.flags.DEFINE_string("log_dir", 'saved_models/run1/logs',
                        """Path to log folder""")
 
 tf.flags.DEFINE_integer("cell_dim", 50,
@@ -33,6 +34,7 @@ tf.flags.DEFINE_integer("display_step", 20,
 
 tf.flags.DEFINE_float("learning_rate", 0.0005,
                       """Learning rate (default: 0.0005)""")
+# Clips values of multiple tensors by the ratio of the sum of their norms.
 tf.flags.DEFINE_float("max_grad_norm", 5.0,
                       """Maximum value of the global norm of the gradients for clipping (default: 5.0)""")
 tf.flags.DEFINE_float("dropout_rate", 0.5,
@@ -41,19 +43,22 @@ tf.flags.DEFINE_float("dropout_rate", 0.5,
 tf.flags.DEFINE_boolean("allow_soft_placement", True,
                         """Allow device soft device placement""")
 
+# True if the path exists, whether it's a file or a directory. F
 if not tf.gfile.Exists(FLAGS.checkpoint_dir):
   tf.gfile.MakeDirs(FLAGS.checkpoint_dir)
 
 if not tf.gfile.Exists(FLAGS.log_dir):
   tf.gfile.MakeDirs(FLAGS.log_dir)
 
-train_writer = tf.summary.FileWriter(FLAGS.log_dir + '/train')
-valid_writer = tf.summary.FileWriter(FLAGS.log_dir + '/valid')
-test_writer = tf.summary.FileWriter(FLAGS.log_dir + '/test')
 
 
 def loss_fn(labels, logits):
+  '''
+  Calculate the cross-entropy loss based on labels and logits input
+  '''
+  # one-hot encode labels
   onehot_labels = tf.one_hot(labels, depth=FLAGS.num_classes)
+  # Yang16 uses log likelyhood equivalent to the cross entropy used here
   cross_entropy_loss = tf.losses.softmax_cross_entropy(onehot_labels=onehot_labels,
                                                        logits=logits)
   tf.summary.scalar('loss', cross_entropy_loss)
@@ -61,13 +66,20 @@ def loss_fn(labels, logits):
 
 
 def train_fn(loss):
+  '''
+  Calculate gradients and update parameters based on loss
+  '''
+  # get all trainaible variables
   trained_vars = tf.trainable_variables()
+  # neat utils function to calculate the parameters of the model and print them out
   count_parameters(trained_vars)
 
-  # Gradient clipping
+  # get gradients for parameter given loss
   gradients = tf.gradients(loss, trained_vars)
 
+  # Gradient clipping (described in paper?): Clips values of multiple tensors by the ratio of the sum of their norms.
   clipped_grads, global_norm = tf.clip_by_global_norm(gradients, FLAGS.max_grad_norm)
+  # save global norm
   tf.summary.scalar('global_grad_norm', global_norm)
 
   # Add gradients and vars to summary
@@ -77,8 +89,11 @@ def train_fn(loss):
   #     tf.summary.histogram(var.name, var)
 
   # Define optimizer
+  # Returns and create (if necessary) the global step tensor.
   global_step = tf.train.get_or_create_global_step()
+  # define the optimizer rmsprop; paper uses different optimizer: SGD with momentum 0.9
   optimizer = tf.train.RMSPropOptimizer(FLAGS.learning_rate)
+  # get apply gradients operation
   train_op = optimizer.apply_gradients(zip(clipped_grads, trained_vars),
                                        name='train_op',
                                        global_step=global_step)
@@ -86,12 +101,22 @@ def train_fn(loss):
 
 
 def eval_fn(labels, logits):
+  '''
+  Calculates average batch accuracy, overall accuracy and returns some operations
+  '''
+  # get index of best predictions
   predictions = tf.argmax(logits, axis=-1)
+  # check agreement between prediction and labels (as integer)
   correct_preds = tf.equal(predictions, tf.cast(labels, tf.int64))
+  # calcualte average accuracy of batch data point
   batch_acc = tf.reduce_mean(tf.cast(correct_preds, tf.float32))
+  # save accuracy
   tf.summary.scalar('accuracy', batch_acc)
 
+  # calculates overall accuracy
+  # acc_update: An operation that increments the total and count variables appropriately and whose value matches accuracy
   total_acc, acc_update = tf.metrics.accuracy(labels, predictions, name='metrics/acc')
+  # intersting: we get all variables related to metrics scope and initialize
   metrics_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="metrics")
   metrics_init = tf.variables_initializer(var_list=metrics_vars)
 
@@ -99,11 +124,17 @@ def eval_fn(labels, logits):
 
 
 def main(_):
-  vocab = read_vocab('data/yelp-2015-w2i.pkl')
-  glove_embs = load_glove('glove.6B.{}d.txt'.format(FLAGS.emb_size), FLAGS.emb_size, vocab)
-  data_reader = DataReader(train_file='data/yelp-2015-train.pkl',
-                           dev_file='data/yelp-2015-dev.pkl',
-                           test_file='data/yelp-2015-test.pkl')
+
+  # load the word_to_index encoded vocabulary
+  vocab = read_vocab('data/preprocessed/yelp-2015-w2i.pkl')
+
+  # create embedding matrix of size (vocab,emb_size)
+  glove_embs = load_glove('../WordEmbeddings/Data/glove.6B/glove.6B.{}d.txt'.format(FLAGS.emb_size), FLAGS.emb_size, vocab)
+
+
+  data_reader = DataReader(train_file='data/preprocessed/yelp-2015-train.pkl',
+                           dev_file='data/preprocessed/yelp-2015-dev.pkl',
+                           test_file='data/preprocessed/yelp-2015-test.pkl')
 
   config = tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement)
   with tf.Session(config=config) as sess:

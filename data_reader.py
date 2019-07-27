@@ -4,8 +4,19 @@ import random
 import numpy as np
 
 class DataReader:
+
   def __init__(self, train_file, dev_file, test_file,
                max_word_length=50, max_sent_length=30, num_classes=5):
+    '''
+    Reads pickled train, dev, test files. Limits texts based on limits: max word length, sentence length!
+    Default limits number of words per document to 1500 words.
+    :param train_file:
+    :param dev_file:
+    :param test_file:
+    :param max_word_length: maximum number of words per sentence
+    :param max_sent_length: maximum number of sentences per document
+    :param num_classes:
+    '''
     self.max_word_length = max_word_length
     self.max_sent_length = max_sent_length
     self.num_classes = num_classes
@@ -21,7 +32,9 @@ class DataReader:
       data = pickle.load(f)
       random.shuffle(data)
       for label, doc in data:
+        # limits number of sentences
         doc = doc[:self.max_sent_length]
+        # limits number of words per sentence
         doc = [sent[:self.max_word_length] for sent in doc]
 
         label -= 1
