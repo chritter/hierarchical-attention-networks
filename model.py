@@ -50,6 +50,8 @@ class Model:
                                               shape=[self.vocab_size, self.emb_size],
                                               initializer=tf.constant_initializer(self.pretrained_embs),
                                               dtype=tf.float32)
+
+      # creates (len(docs), max_sent_length, max_word_length, emb_size) embedding matrix
       self.embedded_inputs = tf.nn.embedding_lookup(self.embedding_matrix, self.docs)
 
   def _init_word_encoder(self):
@@ -59,17 +61,18 @@ class Model:
     '''
     with tf.variable_scope('word-encoder') as scope:
 
-      # holding the input batch:
+      # collapses num docs,num of sentences and creates (number sentences, number words,embedding)
+      # treats each sentece independent of docs, sentence location
       word_inputs = tf.reshape(self.embedded_inputs, [-1, self.max_word_length, self.emb_size])
 
-      # containing the actual lengths for each of the sequences in the batch
+      # containing the length of each sentence
       word_lengths = tf.reshape(self.word_lengths, [-1])
 
       # define forward and backword GRU cells
       cell_fw = rnn.GRUCell(self.cell_dim, name='cell_fw')
       cell_bw = rnn.GRUCell(self.cell_dim, name='cell_bw')
 
-      # initialize state of forward GRU cell as 0's, for each data point in batch
+      # initialize state of forward GRU cell as 0's, for each sentence in batch
       init_state_fw = tf.tile(tf.get_variable('init_state_fw',
                                               shape=[1, self.cell_dim],
                                               initializer=tf.constant_initializer(0)),
@@ -88,7 +91,7 @@ class Model:
                                          initial_state_fw=init_state_fw,
                                          initial_state_bw=init_state_bw,
                                          scope=scope)
-      # rnn_outputs.shape = [batch_size, max_time, self.cell_dim]
+      # rnn_outputs.shape = [number sentences, number words, self.cell_dim]
 
       # word_outputs sentence vectors, word_att_weights alpha
       word_outputs, word_att_weights = attention(inputs=rnn_outputs,
