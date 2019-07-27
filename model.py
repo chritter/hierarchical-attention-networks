@@ -7,7 +7,7 @@ from utils import get_shape, batch_doc_normalize
 class Model:
   def __init__(self, cell_dim, att_dim, vocab_size, emb_size, num_classes, dropout_rate, pretrained_embs):
     '''
-    Define parameters incl. tensors, and
+    Define parameters incl. tensors, and initialize variables
     :param cell_dim:
     :param att_dim:
     :param vocab_size:
