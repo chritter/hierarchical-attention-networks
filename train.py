@@ -1,9 +1,16 @@
+
+
 import tensorflow as tf
 from datetime import datetime
 from data_reader import DataReader
 from model import Model
 from utils import read_vocab, count_parameters, load_glove
-
+import sys
+import mlflow
+mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_experiment('EventDetection')
+from mlflow import tensorflow
+tensorflow.autolog(every_n_iter=100) #default 100
 
 # Parameters
 # ==================================================
@@ -11,22 +18,33 @@ FLAGS = tf.flags.FLAGS
 
 # ----------------------- Setup
 
-# secify which dataset to use
-dataset = 'imdb'
+# input trian data
 
-tf.flags.DEFINE_string("checkpoint_dir", 'saved_models/run1/checkpoints',
+tf.flags.DEFINE_string("vocab","data/pre_pro_imdb/imdb-w2i.pkl",
+                       """Path to file with vocabulary""")
+tf.flags.DEFINE_string("train_data_file","data/pre_pro_imdb/imdb-train.pkl",
+                       """Path to training data pickled""")
+tf.flags.DEFINE_string("dev_data_file","data/pre_pro_imdb/imdb-dev.pkl",
+                       """Path to development data pickled""")
+tf.flags.DEFINE_string("test_data_file","data/pre_pro_imdb/imdb-test.pkl",
+                       """Path to test data pickled""")
+
+# select the word embeddings, must agree with the embedding size emb_size flag
+tf.flags.DEFINE_string("embedding_file","../WordEmbeddings/Data/glove.6B/glove.6B.200d.txt",
+                       """path to file with embeddings""")
+
+tf.flags.DEFINE_string("checkpoint_dir", 'saved_models/run2/checkpoints',
                        """Path to checkpoint folder""")
-tf.flags.DEFINE_string("log_dir", 'saved_models/run1/logs',
+tf.flags.DEFINE_string("log_dir", 'saved_models/run2/logs',
                        """Path to log folder""")
 
 tf.flags.DEFINE_integer("display_step", 20,
                         """Number of steps to display log into TensorBoard (default: 20)""")
 
-if dataset =='yelp15':
-    tf.flags.DEFINE_integer("num_classes", 5,
-                            """Number of classes (default: 5)""")
-if dataset=='imdb':
-    tf.flags.DEFINE_integer("num_classes", 10,
+#if dataset =='yelp15':
+#    tf.flags.DEFINE_integer("num_classes", 5,
+#                            """Number of classes (default: 5)""")
+tf.flags.DEFINE_integer("num_classes", 10, #default imdb data set setting
                             """Number of classes (default: 5)""")
 
 tf.flags.DEFINE_integer("num_checkpoints", 1,
@@ -61,9 +79,27 @@ tf.flags.DEFINE_float("max_grad_norm", 5.0,
 tf.flags.DEFINE_float("dropout_rate", 0.5,
                       """Probability of dropping neurons (default: 0.5)""")
 
+FLAGS = tf.flags.FLAGS
+FLAGS(sys.argv, known_only=True)
 
 # ==================================================
 
+# define here user specific input FLAGS.** =
+
+# <--------- run specific settings
+FLAGS.checkpoint_dir = 'saved_models/run3/checkpoints'
+FLAGS.log_dir = 'saved_models/run3/log'
+FLAGS.num_classes = 10
+FLAGS.vocab = 'data/pre_pro_imdb/imdb-w2i.pkl'
+FLAGS.train_data_file = 'data/pre_pro_imdb_small/imdb-train.pkl'
+FLAGS.dev_data_file =  'data/pre_pro_imdb_small/imdb-dev.pkl'
+FLAGS.test_data_file =  'data/pre_pro_imdb_small/imdb-test.pkl'
+
+
+
+
+for key, values in FLAGS.flag_values_dict().items():
+    mlflow.log_param(key,values)
 
 # True if the path exists, whether it's a file or a directory. F
 if not tf.gfile.Exists(FLAGS.checkpoint_dir):
@@ -153,35 +189,25 @@ def eval_fn(labels, logits):
 
 def main(_):
 
-  # load the word_to_index encoded vocabulary
+    # load the word_to_index encoded vocabulary
+    vocab = read_vocab(FLAGS.vocab)
 
-  if dataset == 'yelp15':
-     vocab = read_vocab('data/preprocessed/yelp-2015-w2i.pkl')
-  if dataset=='imdb':
-     vocab = read_vocab('data/pre_pro_imdb/imdb-w2i.pkl')
+    # create embedding matrix of size (vocab,emb_size)
+    glove_embs = load_glove(FLAGS.embedding_file,FLAGS.emb_size, vocab)
 
-  # create embedding matrix of size (vocab,emb_size)
-  glove_embs = load_glove('../WordEmbeddings/Data/glove.6B/glove.6B.{}d.txt'.format(FLAGS.emb_size), FLAGS.emb_size, vocab)
+    print('input embeddings shape: ',glove_embs.shape)
 
+    # read data
+    data_reader = DataReader(train_file=FLAGS.train_data_file,
+                             dev_file=FLAGS.dev_data_file,
+                             test_file=FLAGS.test_data_file,
+                             num_classes=FLAGS.num_classes)
 
+    config = tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement)
 
-  if dataset == 'yelp15':
-    # read data as (doc,label) pairs
-    data_reader = DataReader(train_file='data/preprocessed/yelp-2015-train.pkl',
-                           dev_file='data/preprocessed/yelp-2015-dev.pkl',
-                           test_file='data/preprocessed/yelp-2015-test.pkl')
-  if dataset == 'imdb':
-    # read data as (doc,label) pairs
-    data_reader = DataReader(train_file='data/pre_pro_imdb/imdb-train.pkl',
-                                   dev_file='data/pre_pro_imdb/imdb-dev.pkl',
-                                   test_file='data/pre_pro_imdb/imdb-test.pkl',
-                                   num_classes=FLAGS.num_classes)
+    tf.reset_default_graph()
 
-
-
-  config = tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement)
-
-  with tf.Session(config=config) as sess:
+    sess = tf.Session(config=config)
 
     model = Model(cell_dim=FLAGS.cell_dim,
                   att_dim=FLAGS.att_dim,
@@ -234,35 +260,61 @@ def main(_):
                                          feed_dict=model.get_feed_dict(batch_docs, batch_labels, training=True))
 
         # each display_step steps evaluate metric variables and add to train_writer, training is false to disables dropout
-        if _step % FLAGS.display_step == 0:
+        if _step % FLAGS.display_step == 0: #
           _summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
           train_writer.add_summary(_summary, global_step=_step)
       # evaluate batch accuracy and print
       print('Training accuracy = {:.2f}'.format(sess.run(total_acc) * 100))
+      last_step_epoch = _step
 
       # we newly initialize metrics tensors each epoch, each evaluation
       sess.run(metrics_init)
 
       # for each epoch calculate metrics for valid set
+      valid_loss = 0.
+      valid_acc = 0.
       for batch_docs, batch_labels in data_reader.read_valid_set(test_batch_size):
         _loss, _acc, _  = sess.run([loss, batch_acc, acc_update], feed_dict=model.get_feed_dict(batch_docs, batch_labels))
+        valid_loss += _loss
+        valid_acc += _acc
         valid_step += 1
-        if valid_step % FLAGS.display_step == 0:
-          _summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
-          valid_writer.add_summary(_summary, global_step=valid_step)
-      print('Validation accuracy = {:.2f}'.format(sess.run(total_acc) * 100))
+        #if valid_step % FLAGS.display_step == 0:
+        #_summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
+      valid_loss = valid_loss/valid_step
+      valid_acc = valid_acc/valid_step
+      summary_loss = tf.Summary(value=[tf.Summary.Value(tag='valid_loss', simple_value=valid_loss)])
+      valid_writer.add_summary(summary_loss,global_step=last_step_epoch)
+      summary_acc = tf.Summary(value=[tf.Summary.Value(tag='valid_accuracy', simple_value=valid_acc)])
+      valid_writer.add_summary(summary_acc,global_step=last_step_epoch)
+      #valid_writer.add_summary(_summary, global_step=valid_step)
+      print('Validation accuracy = {:.2f}  and {:.2f}  '.format(sess.run(total_acc) * 100,valid_acc))
 
       # we newly initialize metrics tensors each epoch, each evaluation
       sess.run(metrics_init)
 
       # for each epoch calculate metrics for test set
+      test_loss = 0.
+      test_acc = 0.
       for batch_docs, batch_labels in data_reader.read_test_set(test_batch_size):
         _loss, _acc, _  = sess.run([loss, batch_acc, acc_update], feed_dict=model.get_feed_dict(batch_docs, batch_labels))
+        test_loss += _loss
+        test_acc += _acc
         test_step += 1
-        if test_step % FLAGS.display_step == 0:
-          _summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
-          test_writer.add_summary(_summary, global_step=test_step)
-      test_acc = sess.run(total_acc) * 100
+        #if test_step % FLAGS.display_step == 0:
+        #  _summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
+        #  test_writer.add_summary(_summary, global_step=test_step)
+      test_loss = test_loss/test_step
+      test_acc = test_acc/test_step
+      summary_loss = tf.Summary(value=[tf.Summary.Value(tag='test_loss', simple_value=test_loss)])
+      test_writer.add_summary(summary_loss,global_step=last_step_epoch)
+      summary_acc = tf.Summary(value=[tf.Summary.Value(tag='test_accuracy', simple_value=test_acc)])
+      test_writer.add_summary(summary_acc,global_step=last_step_epoch)
+      #valid_writer.add_summary(_summary, global_step=valid_step)
+      print('Test accuracy = {:.2f}  and {:.2f}  '.format(sess.run(total_acc) * 100,test_acc))
+
+
+
+      #test_acc = sess.run(total_acc) * 100
       print('Testing accuracy = {:.2f}'.format(test_acc))
 
       # keep track of best test accuracy, if epoch improved, save all variables
@@ -271,8 +323,8 @@ def main(_):
         saver.save(sess, FLAGS.checkpoint_dir)
       print('Best testing accuracy = {:.2f}'.format(test_acc))
 
-  print("{} Optimization Finished!".format(datetime.now()))
-  print('Best testing accuracy = {:.2f}'.format(best_acc))
+      print("{} Optimization Finished!".format(datetime.now()))
+      print('Best testing accuracy = {:.2f}'.format(best_acc))
 
 
 if __name__ == '__main__':

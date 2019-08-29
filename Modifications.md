@@ -1,4 +1,8 @@
-# Documentation - Hirarchical Attention Networks
+# Modifications and Notes for STC
+
+Christian Ritter
+
+* HAN by Yang16, implementation of https://github.com/tqtg/hierarchical-attention-networks
 
 ## Comments
 
@@ -6,8 +10,22 @@
 * embedding initialized through placeholder, lookup
 * chosen TF GRU implementation is not GPU-optimized (Please use tf.contrib.cudnn_rnn.CudnnGRU for better performance on GPU)
 * Interesting implementation of tqdm inside the batch iterator
+* split into train, valid, test set and evaluate each; at end of epoch 
+calculate valid and test set accuracy
+* Requires pre-processing into .pkl files via data_prepare.py
+* train.py for training
+* We use tf.summary to track train, valid and test.
+* Great implementation to get number of parameters in utils.py. Adopt in other codes.
 
-## Datasets
+
+
+
+
+## Input Data
+
+* Expect data in general format with class labels in one column and text in other. Need to adjust
+the data_prepare.py to read in data and create .pkl files
+
 
 * IMDB has lowest number of documents and highest average number of words of 326
 * Distribution of classes for IMDB set
@@ -23,12 +41,26 @@
     * 1: 18k
 
 
+## What needs to be done
 
-## Free parameteres
+* Add mlflow implementation to save parameters...
+* mlflow.log_metric("training loss") 
 
-### Default settings
+
+
+
+
+
+
+
+
+## Runs
+
+##### Free parameteres
+
+##### Default settings
 * Yelp15: Total trainable parameters: 216505, 74800 params from enbeddings alone!
-* IMDB: Total trainable parameters: 18.087.010 !! 17.944.800 from embeddings
+* IMDB: Total trainable parameters: 18.087.010 !! 17.944.800 from embeddings; rest: 142.210 parameter need training from scratch
 * embedding training
  
 ====================================================================================================
