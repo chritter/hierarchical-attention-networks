@@ -10,7 +10,7 @@ import mlflow
 mlflow.set_tracking_uri("http://localhost:5000")
 mlflow.set_experiment('EventDetection')
 from mlflow import tensorflow
-tensorflow.autolog(every_n_iter=100) #default 100
+tensorflow.autolog(every_n_iter=1) #default 100
 
 # Parameters
 # ==================================================
@@ -94,7 +94,7 @@ FLAGS.vocab = 'data/pre_pro_imdb/imdb-w2i.pkl'
 FLAGS.train_data_file = 'data/pre_pro_imdb_small/imdb-train.pkl'
 FLAGS.dev_data_file =  'data/pre_pro_imdb_small/imdb-dev.pkl'
 FLAGS.test_data_file =  'data/pre_pro_imdb_small/imdb-test.pkl'
-
+FLAGS.display_step = 5
 
 
 
@@ -124,7 +124,7 @@ def loss_fn(labels, logits):
   # Yang16 uses log likelyhood equivalent to the cross entropy used here
   cross_entropy_loss = tf.losses.softmax_cross_entropy(onehot_labels=onehot_labels,
                                                        logits=logits)
-  tf.summary.scalar('loss', cross_entropy_loss)
+  tf.summary.scalar('batch_loss', cross_entropy_loss)
   return cross_entropy_loss
 
 
@@ -175,11 +175,13 @@ def eval_fn(labels, logits):
   # calcualte average accuracy of batch data point
   batch_acc = tf.reduce_mean(tf.cast(correct_preds, tf.float32))
   # save accuracy
-  tf.summary.scalar('accuracy', batch_acc)
+  tf.summary.scalar('batch_accuracy', batch_acc)
 
   # calculates overall accuracy
   # acc_update: An operation that increments the total and count variables appropriately and whose value matches accuracy
   total_acc, acc_update = tf.metrics.accuracy(labels, predictions, name='metrics/acc')
+
+
   # intersting: we get all variables related to metrics scope and initialize
   metrics_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="metrics")
   metrics_init = tf.variables_initializer(var_list=metrics_vars)
@@ -219,6 +221,7 @@ def main(_):
 
     # calculate loss
     loss = loss_fn(model.labels, model.logits)
+    total_loss, loss_update = tf.metrics.mean(loss,name='metrics/losss')
 
     # calculates gradients
     train_op, global_step = train_fn(loss)
@@ -226,6 +229,11 @@ def main(_):
     # calculates metrics and merges all
     batch_acc, total_acc, acc_update, metrics_init = eval_fn(model.labels, model.logits)
     summary_op = tf.summary.merge_all()
+
+    summary_total = tf.summary.merge(
+        [tf.summary.scalar('total_batch_accuracy', total_acc),
+        tf.summary.scalar("total_batch_loss",total_loss)
+        ])
 
     sess.run(tf.global_variables_initializer())
 
@@ -256,70 +264,57 @@ def main(_):
       for batch_docs, batch_labels in data_reader.read_train_set(FLAGS.batch_size, shuffle=True):
 
         # do a batch
-        _step, _, _loss, _acc, _ = sess.run([global_step, train_op, loss, batch_acc, acc_update],
+        _step, _, _loss, _acc = sess.run([global_step, train_op, loss, batch_acc],
                                          feed_dict=model.get_feed_dict(batch_docs, batch_labels, training=True))
+
 
         # each display_step steps evaluate metric variables and add to train_writer, training is false to disables dropout
         if _step % FLAGS.display_step == 0: #
-          _summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
+          _summary,_loss_save,_acc_save,_,_ = sess.run([summary_op,loss,batch_acc, acc_update,loss_update],
+                                           feed_dict=model.get_feed_dict(batch_docs, batch_labels))
           train_writer.add_summary(_summary, global_step=_step)
-      # evaluate batch accuracy and print
-      print('Training accuracy = {:.2f}'.format(sess.run(total_acc) * 100))
       last_step_epoch = _step
+
+      # evaluate avg batch metrics
+      total_acc_train,total_loss_train,summary_total_train = sess.run([total_acc,total_loss,summary_total])
+      train_writer.add_summary(summary_total_train,global_step=last_step_epoch)
+      mlflow.log_metrics({'avg_batch_accuracy':total_acc_train,'avg_batch_loss':total_loss_train},step=last_step_epoch)
+      print('Avg training accuracy = {:.2f}'.format(total_acc_train))
+      print('Avg training loss = {:.2f}'.format(total_loss_train))
+
 
       # we newly initialize metrics tensors each epoch, each evaluation
       sess.run(metrics_init)
 
       # for each epoch calculate metrics for valid set
-      valid_loss = 0.
-      valid_acc = 0.
       for batch_docs, batch_labels in data_reader.read_valid_set(test_batch_size):
-        _loss, _acc, _  = sess.run([loss, batch_acc, acc_update], feed_dict=model.get_feed_dict(batch_docs, batch_labels))
-        valid_loss += _loss
-        valid_acc += _acc
-        valid_step += 1
-        #if valid_step % FLAGS.display_step == 0:
-        #_summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
-      valid_loss = valid_loss/valid_step
-      valid_acc = valid_acc/valid_step
-      summary_loss = tf.Summary(value=[tf.Summary.Value(tag='valid_loss', simple_value=valid_loss)])
-      valid_writer.add_summary(summary_loss,global_step=last_step_epoch)
-      summary_acc = tf.Summary(value=[tf.Summary.Value(tag='valid_accuracy', simple_value=valid_acc)])
-      valid_writer.add_summary(summary_acc,global_step=last_step_epoch)
-      #valid_writer.add_summary(_summary, global_step=valid_step)
-      print('Validation accuracy = {:.2f}  and {:.2f}  '.format(sess.run(total_acc) * 100,valid_acc))
+        _loss, _acc, _,_  = sess.run([loss, batch_acc, acc_update,loss_update],
+                                    feed_dict=model.get_feed_dict(batch_docs, batch_labels))
+
+      total_acc_valid,total_loss_valid,summary_total_valid = sess.run([total_acc,total_loss,summary_total])
+      valid_writer.add_summary(summary_total_train,global_step=last_step_epoch)
+      mlflow.log_metrics({'avg_valid_accuracy':total_acc_valid,'avg_valid_loss':total_loss_valid},step=last_step_epoch)
+      print('Avg validation accuracy = {:.2f}'.format(total_acc_valid))
+      print('Avg validation loss = {:.2f}'.format(total_loss_valid))
 
       # we newly initialize metrics tensors each epoch, each evaluation
       sess.run(metrics_init)
 
       # for each epoch calculate metrics for test set
-      test_loss = 0.
-      test_acc = 0.
       for batch_docs, batch_labels in data_reader.read_test_set(test_batch_size):
-        _loss, _acc, _  = sess.run([loss, batch_acc, acc_update], feed_dict=model.get_feed_dict(batch_docs, batch_labels))
-        test_loss += _loss
-        test_acc += _acc
-        test_step += 1
-        #if test_step % FLAGS.display_step == 0:
-        #  _summary = sess.run(summary_op, feed_dict=model.get_feed_dict(batch_docs, batch_labels))
-        #  test_writer.add_summary(_summary, global_step=test_step)
-      test_loss = test_loss/test_step
-      test_acc = test_acc/test_step
-      summary_loss = tf.Summary(value=[tf.Summary.Value(tag='test_loss', simple_value=test_loss)])
-      test_writer.add_summary(summary_loss,global_step=last_step_epoch)
-      summary_acc = tf.Summary(value=[tf.Summary.Value(tag='test_accuracy', simple_value=test_acc)])
-      test_writer.add_summary(summary_acc,global_step=last_step_epoch)
-      #valid_writer.add_summary(_summary, global_step=valid_step)
-      print('Test accuracy = {:.2f}  and {:.2f}  '.format(sess.run(total_acc) * 100,test_acc))
+        _loss, _acc, _,_  = sess.run([loss, batch_acc, acc_update,loss_update],
+                                     feed_dict=model.get_feed_dict(batch_docs, batch_labels))
 
 
-
-      #test_acc = sess.run(total_acc) * 100
-      print('Testing accuracy = {:.2f}'.format(test_acc))
+      total_acc_test,total_loss_test,summary_total_test = sess.run([total_acc,total_loss,summary_total])
+      test_writer.add_summary(summary_total_test,global_step=last_step_epoch)
+      mlflow.log_metrics({'avg_test_accuracy':total_acc_test,'avg_test_loss':total_loss_test},step=last_step_epoch)
+      print('Avg validation accuracy = {:.2f}'.format(total_acc_test))
+      print('Avg validation loss = {:.2f}'.format(total_loss_test))
 
       # keep track of best test accuracy, if epoch improved, save all variables
-      if test_acc > best_acc:
-        best_acc = test_acc
+      if total_acc_test > best_acc:
+        best_acc = total_acc_test
         saver.save(sess, FLAGS.checkpoint_dir)
       print('Best testing accuracy = {:.2f}'.format(test_acc))
 
